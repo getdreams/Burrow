@@ -173,17 +173,18 @@ func TestCachingEvaluator_SingleRequest_Incomplete(t *testing.T) {
 }
 
 type testset struct {
-	offsets                 []*protocol.ConsumerOffset
-	brokerOffsets           []int64
-	currentLag              uint64
-	timeNow                 int64
-	isLagAlwaysNotZero      bool
-	checkIfOffsetsRewind    bool
-	checkIfOffsetsStopped   bool
-	checkIfOffsetsStalled   bool
-	checkIfLagNotDecreasing bool
-	checkIfRecentLagZero    bool
-	status                  protocol.StatusConstant
+	offsets                      []*protocol.ConsumerOffset
+	brokerOffsets                []int64
+	currentLag                   uint64
+	allowedLag                   uint64
+	timeNow                      int64
+	isLagAlwaysGreaterAllowedLag bool
+	checkIfOffsetsRewind         bool
+	checkIfOffsetsStopped        bool
+	checkIfOffsetsStalled        bool
+	checkIfLagNotDecreasing      bool
+	checkIfRecentLagZero         bool
+	status                       protocol.StatusConstant
 }
 
 // This section is the "correctness" proof for the evaluator. Please add lots of tests here, as it's critical that this
@@ -206,16 +207,17 @@ var tests = []testset{
 			{Offset: 4000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 150}},
 			{Offset: 5000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 200}},
 		},
-		brokerOffsets:           []int64{5200},
-		currentLag:              200,
-		timeNow:                 600,
-		isLagAlwaysNotZero:      false,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   false,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusOK,
+		brokerOffsets:                []int64{5200},
+		currentLag:                   200,
+		allowedLag:                   0,
+		timeNow:                      600,
+		isLagAlwaysGreaterAllowedLag: false,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusOK,
 	},
 
 	// 1 - same status. does not return true for stop because time since last commit (400s) is equal to the difference (500-100), not greater than
@@ -227,16 +229,17 @@ var tests = []testset{
 			{Offset: 4000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 150}},
 			{Offset: 5000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 200}},
 		},
-		brokerOffsets:           []int64{5200},
-		currentLag:              200,
-		timeNow:                 900,
-		isLagAlwaysNotZero:      false,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   false,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusOK,
+		brokerOffsets:                []int64{5200},
+		currentLag:                   200,
+		allowedLag:                   0,
+		timeNow:                      900,
+		isLagAlwaysGreaterAllowedLag: false,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusOK,
 	},
 
 	// 2 - status is now STOP because the time since last commit is great enough (500s), even though lag is zero at the start (fixed due to #290)
@@ -248,16 +251,17 @@ var tests = []testset{
 			{Offset: 4000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 150}},
 			{Offset: 5000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 200}},
 		},
-		brokerOffsets:           []int64{5200},
-		currentLag:              200,
-		timeNow:                 1000,
-		isLagAlwaysNotZero:      false,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   true,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusStop,
+		brokerOffsets:                []int64{5200},
+		currentLag:                   200,
+		allowedLag:                   0,
+		timeNow:                      1000,
+		isLagAlwaysGreaterAllowedLag: false,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        true,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusStop,
 	},
 
 	// 3 - status is STOP when lag is always non-zero as well
@@ -269,16 +273,17 @@ var tests = []testset{
 			{Offset: 4000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 200}},
 			{Offset: 5000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 250}},
 		},
-		brokerOffsets:           []int64{5250},
-		currentLag:              250,
-		timeNow:                 1000,
-		isLagAlwaysNotZero:      true,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   true,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusStop,
+		brokerOffsets:                []int64{5250},
+		currentLag:                   250,
+		allowedLag:                   0,
+		timeNow:                      1000,
+		isLagAlwaysGreaterAllowedLag: true,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        true,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusStop,
 	},
 
 	// 4 - status is OK because of zero lag, but stall is true because the offset is always the same and there is lag (another commit with turn this to stall)
@@ -290,16 +295,17 @@ var tests = []testset{
 			{Offset: 1000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 150}},
 			{Offset: 1000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 200}},
 		},
-		brokerOffsets:           []int64{1200},
-		currentLag:              200,
-		timeNow:                 600,
-		isLagAlwaysNotZero:      false,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   false,
-		checkIfOffsetsStalled:   true,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusOK,
+		brokerOffsets:                []int64{1200},
+		currentLag:                   200,
+		allowedLag:                   0,
+		timeNow:                      600,
+		isLagAlwaysGreaterAllowedLag: false,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        true,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusOK,
 	},
 
 	// 5 - status is now STALL because the lag is always non-zero
@@ -311,16 +317,17 @@ var tests = []testset{
 			{Offset: 1000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 250}},
 			{Offset: 1000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 300}},
 		},
-		brokerOffsets:           []int64{1300},
-		currentLag:              300,
-		timeNow:                 600,
-		isLagAlwaysNotZero:      true,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   false,
-		checkIfOffsetsStalled:   true,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusStall,
+		brokerOffsets:                []int64{1300},
+		currentLag:                   300,
+		allowedLag:                   0,
+		timeNow:                      600,
+		isLagAlwaysGreaterAllowedLag: true,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        true,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusStall,
 	},
 
 	// 6 - status is still STALL even when the lag stays the same
@@ -332,16 +339,17 @@ var tests = []testset{
 			{Offset: 1000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 100}},
 			{Offset: 1000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 100}},
 		},
-		brokerOffsets:           []int64{1100},
-		currentLag:              100,
-		timeNow:                 600,
-		isLagAlwaysNotZero:      true,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   false,
-		checkIfOffsetsStalled:   true,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusStall,
+		brokerOffsets:                []int64{1100},
+		currentLag:                   100,
+		allowedLag:                   0,
+		timeNow:                      600,
+		isLagAlwaysGreaterAllowedLag: true,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        true,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusStall,
 	},
 
 	// 7 - status is REWIND because the offsets go backwards, even though the lag does decrease (rewind is worse)
@@ -353,16 +361,17 @@ var tests = []testset{
 			{Offset: 2000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 1250}},
 			{Offset: 4000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 300}},
 		},
-		brokerOffsets:           []int64{4300},
-		currentLag:              300,
-		timeNow:                 600,
-		isLagAlwaysNotZero:      true,
-		checkIfOffsetsRewind:    true,
-		checkIfOffsetsStopped:   false,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: false,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusRewind,
+		brokerOffsets:                []int64{4300},
+		currentLag:                   300,
+		allowedLag:                   0,
+		timeNow:                      600,
+		isLagAlwaysGreaterAllowedLag: true,
+		checkIfOffsetsRewind:         true,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      false,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusRewind,
 	},
 
 	// 8 - status is OK because the current lag is 0 (even though the offsets show lag), even though it would be considered stopped due to timestamps
@@ -374,16 +383,17 @@ var tests = []testset{
 			{Offset: 4000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{Value: 200}},
 			{Offset: 5000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{Value: 250}},
 		},
-		brokerOffsets:           []int64{5250},
-		currentLag:              0,
-		timeNow:                 1000,
-		isLagAlwaysNotZero:      true,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   true,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusOK,
+		brokerOffsets:                []int64{5250},
+		currentLag:                   0,
+		timeNow:                      1000,
+		allowedLag:                   0,
+		isLagAlwaysGreaterAllowedLag: true,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        true,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusOK,
 	},
 
 	// 9 - status is STOP due to timestamps because the current lag is non-zero, even though lag is always zero in offsets, only because there is new data (#290)
@@ -405,16 +415,17 @@ var tests = []testset{
 			{Offset: 792748092, Order: 14, Timestamp: 1512224631394, Lag: &protocol.Lag{Value: 0}},
 			{Offset: 792748093, Order: 15, Timestamp: 1512224632397, Lag: &protocol.Lag{Value: 0}},
 		},
-		brokerOffsets:           []int64{792749024, 792749000, 792748800, 792748600, 792748500},
-		currentLag:              931,
-		timeNow:                 1512224650,
-		isLagAlwaysNotZero:      false,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   true,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusStop,
+		brokerOffsets:                []int64{792749024, 792749000, 792748800, 792748600, 792748500},
+		currentLag:                   931,
+		allowedLag:                   0,
+		timeNow:                      1512224650,
+		isLagAlwaysGreaterAllowedLag: false,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        true,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusStop,
 	},
 
 	// 10 - status is OK, even though it would be stop due to timestamps, as within the recent broker offset window the lag was zero (#303)
@@ -436,16 +447,17 @@ var tests = []testset{
 			{Offset: 792748092, Order: 14, Timestamp: 1512224631394, Lag: &protocol.Lag{Value: 0}},
 			{Offset: 792748093, Order: 15, Timestamp: 1512224632397, Lag: &protocol.Lag{Value: 0}},
 		},
-		brokerOffsets:           []int64{792748094, 792748093, 792748093, 792748093},
-		currentLag:              1,
-		timeNow:                 1512224650,
-		isLagAlwaysNotZero:      false,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   true,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    true,
-		status:                  protocol.StatusOK,
+		brokerOffsets:                []int64{792748094, 792748093, 792748093, 792748093},
+		currentLag:                   1,
+		allowedLag:                   0,
+		timeNow:                      1512224650,
+		isLagAlwaysGreaterAllowedLag: false,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        true,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         true,
+		status:                       protocol.StatusOK,
 	},
 
 	// 11 - same case as test 0 with additional `nil` lag entries which should not affect results
@@ -462,23 +474,88 @@ var tests = []testset{
 			{Offset: 5000, Order: 50, Timestamp: 500000, Lag: &protocol.Lag{Value: 200}},
 			{Offset: 5500, Order: 55, Timestamp: 550000, Lag: nil},
 		},
-		brokerOffsets:           []int64{5700},
-		currentLag:              200,
-		timeNow:                 600,
-		isLagAlwaysNotZero:      false,
-		checkIfOffsetsRewind:    false,
-		checkIfOffsetsStopped:   false,
-		checkIfOffsetsStalled:   false,
-		checkIfLagNotDecreasing: true,
-		checkIfRecentLagZero:    false,
-		status:                  protocol.StatusOK,
+		brokerOffsets:                []int64{5700},
+		currentLag:                   200,
+		allowedLag:                   0,
+		timeNow:                      600,
+		isLagAlwaysGreaterAllowedLag: false,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusOK,
+	},
+
+	// 12 - status is OK despite the fact that the current lag is greater zero and the time since last commit is great enough because of the configured allowed lag
+	{
+		offsets: []*protocol.ConsumerOffset{
+			{Offset: 1000, Order: 1, Timestamp: 100000, Lag: &protocol.Lag{2}},
+			{Offset: 2000, Order: 2, Timestamp: 200000, Lag: &protocol.Lag{1}},
+			{Offset: 2000, Order: 2, Timestamp: 300000, Lag: &protocol.Lag{1}},
+		},
+		brokerOffsets:                []int64{2001},
+		currentLag:                   1,
+		allowedLag:                   1,
+		timeNow:                      550,
+		isLagAlwaysGreaterAllowedLag: false,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        true,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      false,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusOK,
+	},
+
+	// 13 - status is now STALL because the lag is always non-zero (but greater than allowedLag)
+	{
+		offsets: []*protocol.ConsumerOffset{
+			{Offset: 1000, Order: 1, Timestamp: 100000, Lag: &protocol.Lag{100}},
+			{Offset: 1000, Order: 2, Timestamp: 200000, Lag: &protocol.Lag{150}},
+			{Offset: 1000, Order: 3, Timestamp: 300000, Lag: &protocol.Lag{200}},
+			{Offset: 1000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{250}},
+			{Offset: 1000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{300}},
+		},
+		brokerOffsets:                []int64{1300},
+		currentLag:                   300,
+		allowedLag:                   1,
+		timeNow:                      600,
+		isLagAlwaysGreaterAllowedLag: true,
+		checkIfOffsetsRewind:         false,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        true,
+		checkIfLagNotDecreasing:      true,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusStall,
+	},
+
+	// 14 - status is REWIND because the offsets go backwards, even though the lag does decrease (rewind is worse)
+	{
+		offsets: []*protocol.ConsumerOffset{
+			{Offset: 1000, Order: 1, Timestamp: 100000, Lag: &protocol.Lag{100}},
+			{Offset: 2000, Order: 2, Timestamp: 200000, Lag: &protocol.Lag{150}},
+			{Offset: 3000, Order: 3, Timestamp: 300000, Lag: &protocol.Lag{200}},
+			{Offset: 2000, Order: 4, Timestamp: 400000, Lag: &protocol.Lag{1250}},
+			{Offset: 4000, Order: 5, Timestamp: 500000, Lag: &protocol.Lag{300}},
+		},
+		brokerOffsets:                []int64{4300},
+		currentLag:                   300,
+		allowedLag:                   1,
+		timeNow:                      600,
+		isLagAlwaysGreaterAllowedLag: true,
+		checkIfOffsetsRewind:         true,
+		checkIfOffsetsStopped:        false,
+		checkIfOffsetsStalled:        false,
+		checkIfLagNotDecreasing:      false,
+		checkIfRecentLagZero:         false,
+		status:                       protocol.StatusRewind,
 	},
 }
 
 func TestCachingEvaluator_CheckRules(t *testing.T) {
 	for i, testSet := range tests {
-		result := isLagAlwaysNotZero(testSet.offsets)
-		assert.Equalf(t, testSet.isLagAlwaysNotZero, result, "TEST %v: Expected isLagAlwaysNotZero to return %v, not %v", i, testSet.isLagAlwaysNotZero, result)
+		result := isLagAlwaysGreaterAllowedLag(testSet.offsets, testSet.allowedLag)
+		assert.Equalf(t, testSet.isLagAlwaysGreaterAllowedLag, result, "TEST %v: Expected isLagAlwaysGreaterAllowedLag to return %v, not %v", i, testSet.isLagAlwaysGreaterAllowedLag, result)
 
 		result = checkIfOffsetsRewind(testSet.offsets)
 		assert.Equalf(t, testSet.checkIfOffsetsRewind, result, "TEST %v: Expected checkIfOffsetsRewind to return %v, not %v", i, testSet.checkIfOffsetsRewind, result)
@@ -495,8 +572,8 @@ func TestCachingEvaluator_CheckRules(t *testing.T) {
 		result = checkIfRecentLagZero(testSet.offsets, testSet.brokerOffsets)
 		assert.Equalf(t, testSet.checkIfRecentLagZero, result, "TEST %v: Expected checkIfRecentLagZero to return %v, not %v", i, testSet.checkIfRecentLagZero, result)
 
-		status := calculatePartitionStatus(testSet.offsets, testSet.brokerOffsets, testSet.currentLag, testSet.timeNow)
-		assert.Equalf(t, testSet.status, status, "TEST %v: Expected calculatePartitionStatus to return %v, not %v", i, testSet.status.String(), status.String())
+		status := calculatePartitionStatus(testSet.offsets, testSet.brokerOffsets, testSet.currentLag, testSet.allowedLag, testSet.timeNow)
+		assert.Equalf(t, testSet.status.String(), status.String(), "TEST %v: Expected calculatePartitionStatus to return %v, not %v", i, testSet.status.String(), status.String())
 	}
 }
 

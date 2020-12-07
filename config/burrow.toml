@@ -55,6 +55,10 @@ intervals=15
 expire-group=604800
 min-distance=1
 
+[evaluator.default]
+class-name="caching"
+allowed-lag=0
+
 [notifier.default]
 class-name="http"
 url-open="http://someservice.example.com:1467/v1/event"

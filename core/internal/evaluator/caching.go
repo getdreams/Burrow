@@ -36,6 +36,7 @@ type CachingEvaluator struct {
 	name            string
 	expireCache     int
 	minimumComplete float32
+	allowedLag      uint64
 
 	RequestChannel chan *protocol.EvaluatorRequest
 	running        sync.WaitGroup
@@ -63,8 +64,18 @@ func (module *CachingEvaluator) Configure(name, configRoot string) {
 
 	// Set defaults for configs if needed
 	viper.SetDefault(configRoot+".expire-cache", 10)
+	viper.SetDefault(configRoot+".allowed-lag", 0)
+
 	module.expireCache = viper.GetInt(configRoot + ".expire-cache")
 	module.minimumComplete = float32(viper.GetFloat64(configRoot + ".minimum-complete"))
+	module.allowedLag = viper.GetUint64(configRoot + ".allowed-lag")
+
+	module.Log.Info("caching configuration",
+		zap.Uint64("allowedLag", module.allowedLag),
+		zap.Float32("minimumComplete", module.minimumComplete),
+		zap.Int("expireCache", module.expireCache),
+	)
+
 	cacheExpire := time.Duration(module.expireCache) * time.Second
 
 	newCache, err := goswarm.NewSimple(&goswarm.Config{
@@ -77,6 +88,7 @@ func (module *CachingEvaluator) Configure(name, configRoot string) {
 		panic(err)
 	}
 	module.cache = newCache
+
 }
 
 // GetCommunicationChannel returns the RequestChannel that has been setup for this module.
@@ -223,7 +235,7 @@ func (module *CachingEvaluator) evaluateConsumerStatus(clusterAndConsumer string
 	completePartitions := 0
 	for topic, partitions := range topics {
 		for partitionID, partition := range partitions {
-			partitionStatus := evaluatePartitionStatus(partition, module.minimumComplete)
+			partitionStatus := evaluatePartitionStatus(partition, module.minimumComplete, module.allowedLag)
 			partitionStatus.Topic = topic
 			partitionStatus.Partition = int32(partitionID)
 			partitionStatus.Owner = partition.Owner
@@ -267,7 +279,7 @@ func (module *CachingEvaluator) evaluateConsumerStatus(clusterAndConsumer string
 	return status, nil
 }
 
-func evaluatePartitionStatus(partition *protocol.ConsumerPartition, minimumComplete float32) *protocol.PartitionStatus {
+func evaluatePartitionStatus(partition *protocol.ConsumerPartition, minimumComplete float32, allowedLag uint64) *protocol.PartitionStatus {
 	status := &protocol.PartitionStatus{
 		Status:     protocol.StatusOK,
 		CurrentLag: partition.CurrentLag,
@@ -304,44 +316,46 @@ func evaluatePartitionStatus(partition *protocol.ConsumerPartition, minimumCompl
 
 	// If the partition does not meet the completeness threshold, just return it as OK
 	if status.Complete >= minimumComplete {
-		status.Status = calculatePartitionStatus(offsets, partition.BrokerOffsets, partition.CurrentLag, time.Now().Unix())
+		status.Status = calculatePartitionStatus(offsets, partition.BrokerOffsets, partition.CurrentLag, allowedLag, time.Now().Unix())
 	}
 
 	return status
 }
 
-func calculatePartitionStatus(offsets []*protocol.ConsumerOffset, brokerOffsets []int64, currentLag uint64, timeNow int64) protocol.StatusConstant {
-	// If the current lag is zero, the partition is never in error
-	if currentLag > 0 {
-		// Check if the partition is stopped first, as this is a problem even if the consumer had zero lag at some
-		// point in its commit history (as the commit history could be very old). However, if the recent broker offsets
-		// for this partition show that the consumer had zero lag recently ("intervals * offset-refresh" should be on
-		// the order of minutes), don't consider it stopped yet.
-		if checkIfOffsetsStopped(offsets, timeNow) && (!checkIfRecentLagZero(offsets, brokerOffsets)) {
-			return protocol.StatusStop
-		}
+func calculatePartitionStatus(offsets []*protocol.ConsumerOffset, brokerOffsets []int64, currentLag uint64, allowedLag uint64, timeNow int64) protocol.StatusConstant {
+	// If the current lag is not greater that allowed (default 0), the partition is never in error
+	if currentLag <= allowedLag {
+		return protocol.StatusOK
+	}
 
-		// Now check if the lag was zero at any point, and skip the rest of the checks if this is true
-		if isLagAlwaysNotZero(offsets) {
-			// Check for errors, in order of severity starting with the worst. If any check comes back true, skip the rest
-			if checkIfOffsetsRewind(offsets) {
-				return protocol.StatusRewind
-			}
-			if checkIfOffsetsStalled(offsets) {
-				return protocol.StatusStall
-			}
-			if checkIfLagNotDecreasing(offsets) {
-				return protocol.StatusWarning
-			}
+	// Check if the partition is stopped first, as this is a problem even if the consumer had zero lag at some
+	// point in its commit history (as the commit history could be very old). However, if the recent broker offsets
+	// for this partition show that the consumer had zero lag recently ("intervals * offset-refresh" should be on
+	// the order of minutes), don't consider it stopped yet.
+	if checkIfOffsetsStopped(offsets, timeNow) && (!checkIfRecentLagZero(offsets, brokerOffsets)) {
+		return protocol.StatusStop
+	}
+
+	// Now check if the lag was greater than allowed lag at any point, and skip the rest of the checks if this is true
+	if isLagAlwaysGreaterAllowedLag(offsets, allowedLag) {
+		// Check for errors, in order of severity starting with the worst. If any check comes back true, skip the rest
+		if checkIfOffsetsRewind(offsets) {
+			return protocol.StatusRewind
+		}
+		if checkIfOffsetsStalled(offsets) {
+			return protocol.StatusStall
+		}
+		if checkIfLagNotDecreasing(offsets) {
+			return protocol.StatusWarning
 		}
 	}
 	return protocol.StatusOK
 }
 
-// Rule 1 - If over the stored period, the lag is ever zero for the partition, the period is OK
-func isLagAlwaysNotZero(offsets []*protocol.ConsumerOffset) bool {
+// Rule 1 - If over the stored period, the lag is ever lower or equal allowed lag for the partition, the period is OK
+func isLagAlwaysGreaterAllowedLag(offsets []*protocol.ConsumerOffset, allowedLag uint64) bool {
 	for _, offset := range offsets {
-		if offset.Lag != nil && offset.Lag.Value == 0 {
+		if offset.Lag != nil && offset.Lag.Value <= allowedLag {
 			return false
 		}
 	}
