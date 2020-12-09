@@ -422,7 +422,8 @@ func (nc *Coordinator) checkAndSendResponseToModules(response *protocol.Consumer
 
 	cluster.Lock.RLock()
 	defer cluster.Lock.RUnlock()
-	cgroup, ok := cluster.Groups[response.Group]
+	group := response.Group
+	cgroup, ok := cluster.Groups[group]
 	if !ok {
 		// The group must have just been deleted
 		return
@@ -437,15 +438,12 @@ func (nc *Coordinator) checkAndSendResponseToModules(response *protocol.Consumer
 	for _, genericModule := range nc.modules {
 		module := genericModule.(Module)
 
-		// No allowlist means everything passes
 		groupAllowlist := module.GetGroupAllowlist()
 		groupDenylist := module.GetGroupDenylist()
-		if (groupAllowlist != nil) && (!groupAllowlist.MatchString(response.Group)) {
+		if !helpers.AcceptConsumerGroup(module.GetLogger(), group, groupAllowlist, groupDenylist) {
 			continue
 		}
-		if (groupDenylist != nil) && groupDenylist.MatchString(response.Group) {
-			continue
-		}
+
 		if module.AcceptConsumerGroup(response) {
 			nc.running.Add(1)
 			nc.notifyModuleFunc(module, response, cgroup.Start, cgroup.ID)

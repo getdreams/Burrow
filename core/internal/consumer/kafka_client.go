@@ -141,6 +141,11 @@ func (module *KafkaClient) Configure(name, configRoot string) {
 		}
 		module.groupDenylist = re
 	}
+
+	module.Log.Info("kafka client configuration",
+		zap.String("denylist", denylist),
+		zap.String("allowlist", allowlist),
+	)
 }
 
 // Start connects to the Kafka cluster using the Shopify/sarama client. Any error connecting to the cluster is returned
@@ -409,13 +414,7 @@ func readString(buf *bytes.Buffer) (string, error) { // nolint:interfacer
 }
 
 func (module *KafkaClient) acceptConsumerGroup(group string) bool {
-	if (module.groupAllowlist != nil) && (!module.groupAllowlist.MatchString(group)) {
-		return false
-	}
-	if (module.groupDenylist != nil) && module.groupDenylist.MatchString(group) {
-		return false
-	}
-	return true
+	return helpers.AcceptConsumerGroup(module.Log, group, module.groupAllowlist, module.groupDenylist)
 }
 
 func (module *KafkaClient) decodeKeyAndOffset(offsetOrder int64, keyBuffer *bytes.Buffer, value []byte, logger *zap.Logger) {
@@ -440,7 +439,9 @@ func (module *KafkaClient) decodeKeyAndOffset(offsetOrder int64, keyBuffer *byte
 	)
 
 	if !module.acceptConsumerGroup(offsetKey.Group) {
-		offsetLogger.Debug("dropped", zap.String("reason", "allowlist"))
+		offsetLogger.Debug("dropped",
+			zap.String("reason", "allowlist || denyList"),
+			zap.String("group", offsetKey.Group))
 		return
 	}
 
@@ -489,6 +490,7 @@ func (module *KafkaClient) decodeAndSendOffset(offsetOrder int64, offsetKey offs
 		Order:       offsetOrder,
 	}
 	logger.Debug("consumer offset",
+		zap.Int64("order", offsetOrder),
 		zap.Int64("offset", offsetValue.Offset),
 		zap.Int64("timestamp", offsetValue.Timestamp),
 	)
