@@ -11,6 +11,7 @@
 package helpers
 
 import (
+	"go.uber.org/zap"
 	"net"
 	"net/url"
 	"regexp"
@@ -149,4 +150,19 @@ func ValidateHostPort(host string, allowBlankHost bool) bool {
 		return ValidateIP(hostname)
 	}
 	return ValidateHostname(hostname)
+}
+
+func AcceptConsumerGroup(logger *zap.Logger, group string, allowList *regexp.Regexp, denyList *regexp.Regexp) bool {
+	logger.Debug("verify consumer group with allow/deny list", zap.String("group", group))
+	if allowList != nil && allowList.MatchString(group) {
+		logger.Debug("consumer group is on the allow list", zap.String("group", group))
+		return true
+	}
+
+	if denyList != nil && denyList.MatchString(group) {
+		logger.Debug("consumer group is on the deny list", zap.String("group", group))
+		return false
+	}
+	logger.Debug("consumer group isn't on any list")
+	return true
 }

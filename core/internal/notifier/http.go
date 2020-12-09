@@ -12,7 +12,6 @@ package notifier
 
 import (
 	"errors"
-	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -211,12 +210,13 @@ func (module *HTTPNotifier) Notify(status *protocol.ConsumerGroupStatus, eventID
 		logger.Error("failed to send", zap.Error(err))
 		return
 	}
-	io.Copy(ioutil.Discard, resp.Body)
-	resp.Body.Close()
 
 	if (resp.StatusCode >= 200) && (resp.StatusCode <= 299) {
 		logger.Debug("sent")
 	} else {
-		logger.Error("failed to send", zap.Int("response", resp.StatusCode))
+		body, _ := ioutil.ReadAll(resp.Body)
+		logger.Error("failed to send", zap.Int("response", resp.StatusCode), zap.ByteString("body", body))
 	}
+
+	resp.Body.Close()
 }

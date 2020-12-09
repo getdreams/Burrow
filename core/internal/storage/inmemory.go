@@ -12,6 +12,7 @@ package storage
 
 import (
 	"container/ring"
+	"github.com/linkedin/Burrow/core/internal/helpers"
 	"math/rand"
 	"regexp"
 	"sync"
@@ -368,13 +369,7 @@ func (module *InMemoryStorage) getConsumerPartition(consumerMap *consumerGroup, 
 }
 
 func (module *InMemoryStorage) acceptConsumerGroup(group string) bool {
-	if (module.groupAllowlist != nil) && (!module.groupAllowlist.MatchString(group)) {
-		return false
-	}
-	if (module.groupDenylist != nil) && module.groupDenylist.MatchString(group) {
-		return false
-	}
-	return true
+	return helpers.AcceptConsumerGroup(module.Log, group, module.groupAllowlist, module.groupDenylist)
 }
 
 func (module *InMemoryStorage) addConsumerOffset(request *protocol.StorageRequest, requestLogger *zap.Logger) {
